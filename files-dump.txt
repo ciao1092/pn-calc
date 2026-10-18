@@ -1,0 +1,182 @@
+# File: "./BinaryExpression.cs"
+
+
+internal class BinaryExpr(OperatorToken op, Expr left, Expr right) : Expr
+{
+	public readonly OperatorToken Operator = op;
+	public readonly Expr Left = left;
+	public readonly Expr Right = right;
+	public override T Receive<T>(IVisitor<T> visitor) => visitor.Visit(this);
+}
+# File: "./ConstExpr.cs"
+internal class ConstExpr(double value) : Expr
+{
+	public readonly double Value = value;
+	public override T Receive<T>(IVisitor<T> visitor) => visitor.Visit(this);
+}
+# File: "./Evaluator.cs"
+
+internal class Evaluator : IVisitor<double>
+{
+	public double Evaluate(Expr e)
+	{
+		return e.Receive(this);
+	}
+
+	double IVisitor<double>.Visit(ConstExpr expr)
+	{
+		return expr.Value;
+	}
+
+	double IVisitor<double>.Visit(BinaryExpr expr)
+	{
+		double v1 = expr.Left.Receive(this);
+		double v2 = expr.Right.Receive(this);
+		switch (expr.Operator.Type)
+		{
+			case OperatorType.Times:
+				return v1 * v2;
+			case OperatorType.Plus:
+				return v1 + v2;
+			case OperatorType.Divide:
+				if (v2 == 0)
+					throw new DivideByZeroException("Attempted to divide by zero.");
+				return v1 / v2;
+			case OperatorType.Minus:
+				return v1 - v2;
+			default:
+				throw new NotImplementedException($"{expr.Operator}: operator not implemented.");
+		}
+	}
+}
+
+# File: "./Expr.cs"
+internal abstract class Expr
+{
+	public abstract T Receive<T>(IVisitor<T> visitor);
+}
+
+# File: "./IVisitor.cs"
+internal interface IVisitor<T>
+{
+	T Visit(ConstExpr expr);
+	T Visit(BinaryExpr expr);
+}
+# File: "./LiteralToken.cs"
+internal class LiteralToken(double value) : Token
+{
+	public double Value = value;
+	public override string AsString => Value.ToString();
+}
+# File: "./OperatorToken.cs"
+internal class OperatorToken(OperatorType type) : Token
+{
+    static readonly Dictionary<string, OperatorType> operators = new()
+    {
+        { "+", OperatorType.Plus },
+        { "-", OperatorType.Minus },
+        { "*", OperatorType.Times },
+        { "/", OperatorType.Divide },
+    };
+
+    public static string? OperatorTypeToString(OperatorType type)
+    {
+        var x = operators.FirstOrDefault(x => x.Value == type).Key;
+        return string.IsNullOrEmpty(x) ? null : x;
+    }
+
+    public static OperatorType OperatorTypeFromString(string str)
+    {
+        return operators.GetValueOrDefault(str);
+    }
+
+    public readonly OperatorType Type = type;
+
+    public override string AsString => OperatorTypeToString(Type)!;
+}
+
+
+
+internal enum OperatorType
+{
+    Invalid,
+    Times,
+    Plus,
+    Minus,
+    Divide
+}
+# File: "./Program.cs"
+﻿
+const string input = "/ 3 0";
+string[] parts = input.Split();
+
+List<Token> tokens = [];
+
+foreach (string token in parts)
+{
+	if (string.IsNullOrWhiteSpace(token)) continue;
+	if (double.TryParse(token, out double doubleValue))
+	{
+		tokens.Add(new LiteralToken(doubleValue));
+	}
+	else
+	{
+		var op = OperatorToken.OperatorTypeFromString(token);
+		if (op != OperatorType.Invalid)
+		{
+			tokens.Add(new OperatorToken(op));
+		}
+		else throw new($"Invalid operator: \"{token}\"");
+	}
+}
+
+int currentToken = 0;
+Expr getExprTree()
+{
+	if (currentToken >= tokens.Count) throw new Exception("Unexpected end of expression. Missing operands or operators.");
+
+	var token = tokens[currentToken++];
+
+	if (token is LiteralToken literal)
+	{
+		return new ConstExpr(literal.Value);
+	}
+	else if (token is OperatorToken operatorToken)
+	{
+		if (currentToken + 1 >= tokens.Count) throw new Exception($"Operator \"{operatorToken.AsString}\" missing operands.");
+
+
+		var leftExpr = getExprTree();
+		var rightExpr = getExprTree();
+
+		return new BinaryExpr(operatorToken, leftExpr, rightExpr);
+	}
+
+	throw new Exception($"\"{token}\": invalid token");
+}
+
+var e = getExprTree();
+
+Console.WriteLine(new TreeToStringInator().GetPrintableTree(e));
+
+var result = new Evaluator().Evaluate(e);
+Console.WriteLine(result);
+
+# File: "./Token.cs"
+internal abstract class Token
+{
+	public abstract string AsString { get; }
+}
+
+# File: "./TreeToStringInator.cs"
+internal class TreeToStringInator : IVisitor<string>
+{
+	public string GetPrintableTree(Expr e) => e.Receive(this);
+
+	string IVisitor<string>.Visit(ConstExpr expr) => $"{expr.Value}";
+
+	string IVisitor<string>.Visit(BinaryExpr expr)
+	{
+		return $"({expr.Left.Receive(this)}{expr.Operator.AsString}{expr.Right.Receive(this)})";
+	}
+}
